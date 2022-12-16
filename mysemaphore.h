@@ -19,43 +19,55 @@
 #include <string.h>
 
 
-void unlocksemaphore(struct sembuf sem_buf, struct semid_ds buf, int semid)
+int unlocksemaphore(struct sembuf* sem_buf, struct semid_ds* buf, int semid)
 {
     int retval;
-    sem_buf.sem_op = 1;
-    retval = semop(semid,&sem_buf,1);
-    if (retval == -1)
+    if (sem_buf->sem_op == 0)
     {
-        perror("Semaphore locked :");
-        exit(0);
+        sem_buf->sem_op = sem_buf->sem_op + 1;
+        retval = semop(semid,sem_buf,1);
+        if (retval == -1)
+        {
+            perror("Semaphore locked :");
+            exit(0);
+        }
     }
+    return sem_buf->sem_op;
 }
 
-void locksemaphore(struct sembuf sem_buf, struct semid_ds buf, int semid)
+int locksemaphore(struct sembuf* sem_buf, struct semid_ds* buf, int semid)
 {
     int retval;
-    sem_buf.sem_num = 0;
-    sem_buf.sem_op = -1;
-    sem_buf.sem_flg = SEM_UNDO;
-    retval = semop(semid, &sem_buf,1);
-    if (retval == -1)
+    if (sem_buf->sem_op == 1)
     {
-                perror("Semaphore locked :");
-                exit(0);
+        sem_buf->sem_num = 0;
+        sem_buf->sem_op = sem_buf->sem_op - 1;
+        sem_buf->sem_flg = SEM_UNDO;
     }
+    else
+    {
+        retval = semop(semid,sem_buf,1);
+        if (retval == -1)
+        {
+                    perror("Semaphore locked :");
+                    exit(0);
+        }
+    }
+    return sem_buf->sem_op;
 }
 
-int createsemaphore(struct sembuf sem_buf, struct semid_ds buf, key_t key)
+
+int createsemaphore(struct sembuf* sem_buf, struct semid_ds buf, key_t key, int capacity)
 {
     int retval;
     int semid = semget(key,1, IPC_CREAT | IPC_EXCL | 0666);
     if (semid >= 0)
     {
         //semaphore created success
-        sem_buf.sem_op = 1;
-        sem_buf.sem_num = 0;
-        sem_buf.sem_flg = 0;
-        retval = semop(semid, &sem_buf, 1);
+        sem_buf->sem_op = 1;
+        sem_buf->sem_num = 0;
+        sem_buf->sem_flg = 0;
+        retval = semop(semid, sem_buf, 1);
         if (retval == -1)   
         {
             perror("Semaphore Operation: ");
@@ -71,10 +83,10 @@ int createsemaphore(struct sembuf sem_buf, struct semid_ds buf, key_t key)
             perror("Semaphore was not connected");
             exit(0);
             }
-            sem_buf.sem_op = 0;
-            sem_buf.sem_num = 0;
-            sem_buf.sem_flg = SEM_UNDO;
-            retval = semop(semid,&sem_buf,1);
+            sem_buf->sem_op = 0;
+            sem_buf->sem_num = 0;
+            sem_buf->sem_flg = SEM_UNDO;
+            retval = semop(semid,sem_buf,1);
             if (retval == -1)
             {
                 perror("Sempahore Operation :");

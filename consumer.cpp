@@ -16,8 +16,8 @@
 #include "mysemaphore.h"
 using namespace std;
 using namespace this_thread;
-#define SEM_KEY2 0x55522
-#define SEM_KEY3 0x44551
+#define SEM_KEY2 0x22222
+#define SEM_KEY3 0x54123
 #define MAX_SIZE_OF_COMMODITY_NAME 12
 int shmid;
 int shmid2;
@@ -80,10 +80,11 @@ void remove_semaphore(key_t key) {
 
 void signalhandler(int num)
 {   
+    printf("Memory was destoried\n");
     shmctl(shmid,IPC_RMID, NULL);
     shmctl(shmid2,IPC_RMID, NULL);
     remove_semaphore(SEM_KEY2);
-    remove_semaphore(SEM_KEY2);
+    remove_semaphore(SEM_KEY3);
 }
 
 void printbidding(Marketplace* m, int size)
@@ -94,7 +95,6 @@ void printbidding(Marketplace* m, int size)
     printf("+-------------------------------------+\n");
     for (size_t i = 0; i < size; i++)
     {
-
         //printf("| %-14s| %7.2lf%s | %7.2lf%s |\n",m[i].commodityName,m[i].commodityPrice1,m[i].indicator1,m[i].AveragePrice,m[i].indicator2);
         printf("| %-14s|",m[i].commodityName);
         if(!strcmp(m[i].indicator1,u8"↑"))
@@ -174,7 +174,7 @@ Marketplace* updateCommoditiy(Marketplace* commodities, int commodityNumber, Com
 
 Marketplace * insertcomodities(Marketplace* m)
 {
-    Marketplace n("ALUMININUM");
+    Marketplace n("ALUMINIUM");
     m[0] = n; 
     Marketplace n2("COPPER");
     m[1] = n2;
@@ -199,13 +199,11 @@ Marketplace * insertcomodities(Marketplace* m)
     return m;    
 }
 
-
-
 int main(int argv, char** argc)
 {
-    // int argv = 2;
-    // char argc[10][10];
-    strcpy(argc[1],"20");
+    //  int argv = 2;
+    //  char argc[10][10];
+    // strcpy(argc[1],"40");
     if (argv != 2)
     {
         printf("Error\n");
@@ -213,111 +211,159 @@ int main(int argv, char** argc)
     }
     system("touch broker.txt");
     system("touch m.txt");
-    signal(SIGINT,signalhandler);
-    //vector <Marketplace> commodities; 
+    signal(SIGTSTP,signalhandler);
+    
     Marketplace* commodities = (Marketplace *)malloc(sizeof(Marketplace)*11);
     commodities =insertcomodities(commodities);
-    key_t key = ftok("broker.txt",'A');
-    int shmid = shmget(key,sizeof(Commodity)*stoi(argc[1]),0666|IPC_CREAT);
-    Commodity *cmsg = (Commodity*) shmat(shmid,(void*)0,0);
     key_t key2 = ftok("m.txt",'B');
-    int shmid2 = shmget(key2,sizeof(data), 0666 | IPC_CREAT);
-    data *d = (data*) shmat(shmid2,(void*)0,0);
+    data *d;
+    shmid2 = shmget(key2,sizeof(data), 0666 | IPC_CREAT | IPC_EXCL);
+    if (shmid2 < 0)
+    {
+        if (errno == EEXIST)
+        {
+            shmid2 = shmget(key2,sizeof(data), 0666);
+        }
+        if (shmid2 < 0)
+        {
+            // shmctl(shmid2,IPC_RMID, NULL);
+            perror("Memory was not attached");
+            exit(0);                
+        }
+    }
+    
+    d = (data*) shmat(shmid2,(void*)0,0);
     d->capacity = stoi(argc[1]);
     d->front = d->size = 0;
     d->rear = d->capacity - 1;
-     /*____________________________________________________________________*/
+    /*____________________________________________________________________*/
         struct sembuf sem_buf2;
         struct semid_ds buf2;
         int retval2;
-        int semid2 = semget(SEM_KEY2,1, IPC_CREAT | IPC_EXCL | 0666);
+        int semid2 = semget(SEM_KEY2,1, IPC_CREAT| 0666);
         if (semid2 >= 0)
         {
             //semaphore created success
-            sem_buf2.sem_op = 1;
+            sem_buf2.sem_op = d->capacity;
             sem_buf2.sem_num = 0;
             sem_buf2.sem_flg = 0;
+            printf("Consumer created\n");
             retval2 = semop(semid2, &sem_buf2, 1);
             if (retval2 == -1)   
             {
                 perror("Semaphore Operation: ");
                 exit(0);
             }
-        }
-        else if (errno == EEXIST)
-        {
-            //connect other process semaphore
-            semid2 = semget(SEM_KEY2, 1, 0);
-            if (semid2 < 0)
-            {
-            perror("Semaphore was not connected");
-            exit(0);
             }
-            sem_buf2.sem_op = 1;
-            sem_buf2.sem_num = 0;
-            sem_buf2.sem_flg = SEM_UNDO;
-            retval2 = semop(semid2,&sem_buf2,1);
-            if (retval2 == -1)
-            {
-                perror("Sempahore Operation :");
-                exit(0);
-            }
-        }
-        /*__________________________________________________________________*/
+            // else if (errno == EEXIST)
+            // {
+            //     //connect other process semaphore
+            //     semid2 = semget(SEM_KEY2, 1, 0);
+            //     if (semid2 < 0)
+            //     {
+            //     perror("Semaphore was not connected");
+            //     exit(0);
+            //     }
+            //     sem_buf2.sem_op = d->capacity + 1;
+            //     sem_buf2.sem_num = 0;
+            //     sem_buf2.sem_flg = SEM_UNDO;
+            //     printf("Consumer attached\n");
+            //     retval2 = semop(semid2,&sem_buf2,1);
+            //     if (retval2 == -1)
+            //     {
+            //         perror("Sempahore Operation :");
+            //         exit(0);
+            //     }
+            
+            // }
+    /*____________________________________________________________________*/
         struct sembuf sem_buf3;
         struct semid_ds buf3;
         int retval3;
-        int semid3 = semget(SEM_KEY3,1, IPC_CREAT | IPC_EXCL | 0666);
-        if (semid3 >= 0)
+        int semid3 = semget(SEM_KEY3,1, IPC_CREAT | 0666);
+        // if (semid3 >= 0)
+        // {
+        //     //semaphore created success
+        //     sem_buf3.sem_op = 0;
+        //     sem_buf3.sem_num = 0;
+        //     sem_buf3.sem_flg = 0;
+        //     retval3 = semop(semid3, &sem_buf3, 1);
+        //     if (retval3 == -1)   
+        //     {
+        //         perror("Semaphore Operation: ");
+        //         exit(0);
+        //     }
+        //     }
+            // else if (errno == EEXIST)
+            // {
+            //     //connect other process semaphore
+            //     semid3 = semget(SEM_KEY3, 1, 0);
+            //     if (semid3 < 0)
+            //     {
+            //     perror("Semaphore was not connected");
+            //     exit(0);
+            //     }
+            //     sem_buf3.sem_op = 0;
+            //     sem_buf3.sem_num = 0;
+            //     sem_buf3.sem_flg = SEM_UNDO;
+            //     retval3 = semop(semid3,&sem_buf3,1);
+            //     if (retval3 == -1)
+            //     {
+            //         perror("Sempahore Operation :");
+            //         exit(0);
+            //     }
+            
+            // }
+            
+    key_t key = ftok("broker.txt",'A');
+    shmid = shmget(key,sizeof(Commodity)*stoi(argc[1]),0666|IPC_CREAT|IPC_EXCL);
+    if (shmid == -1)
+    {
+        if (errno == EEXIST)
         {
-            //semaphore created success
-            sem_buf3.sem_op = 1;
-            sem_buf3.sem_num = 0;
-            sem_buf3.sem_flg = 0;
-            retval3 = semop(semid3, &sem_buf3, 1);
-            if (retval3 == -1)   
-            {
-                perror("Semaphore Operation: ");
-                exit(0);
-            }
+            shmid = shmget(key,sizeof(Commodity)*stoi(argc[1]), 0666);
         }
-        else if (errno == EEXIST)
+        if (shmid < 0)
         {
-            //connect other process semaphore
-            semid3 = semget(SEM_KEY3, 1, 0);
-            if (semid3 < 0)
-            {
-            perror("Semaphore was not connected");
-            exit(0);
-            }
-            sem_buf3.sem_op = 1;
-            sem_buf3.sem_num = 0;
-            sem_buf3.sem_flg = SEM_UNDO;
-            retval3 = semop(semid3,&sem_buf3,1);
-            if (retval3 == -1)
-            {
-                perror("Sempahore Operation :");
-                exit(0);
-            }
+                // shmctl(shmid,IPC_RMID,NULL);
+                // shmctl(shmid2,IPC_RMID, NULL);
+                perror("Memory was not attached");
+                exit(0);                
         }
+    }
+    Commodity *cmsg = (Commodity*) shmat(shmid,(void*)0,0);
     while (1)
     {
-        
-        if (d->size == 0)
-        {
-            printf("Buffer was empty\n");
-            locksemaphore(sem_buf3,buf3,semid3);
-            while(d->size == 0)
+        //_____________________lock empty buffer________________________
+            if (d->size == 0)
             {
-
+            printf("Buffer was empty\n");
             }
-        }
+            sem_buf3.sem_num = 0;
+            sem_buf3.sem_op = -1; /* Allocating the resources */
+            //sem_buf3.sem_flg = SEM_UNDO;
+            retval3 = semop(semid3, &sem_buf3, 1);
+            if (retval3 == -1) {
+                perror("Semaphore Locked: ");
+                exit(0);
+            }
+        //_______________________________________________________________
         Commodity * cptr = (Commodity *)malloc(sizeof(Commodity));
         strcpy(cptr->commodityName,cmsg[d->front].commodityName);
         cptr->commodityPrice = cmsg[d->front].commodityPrice;
         d->front = (d->front + 1) % d->capacity;
         d->size = d->size - 1;
-        unlocksemaphore(sem_buf2,buf2,semid2);
+        //_______________________Unlock full buffer____________________________
+        sem_buf2.sem_op = 1; /* Releasing the resource */
+        retval2 = semop(semid2, &sem_buf2, 1);
+        //________________________________________________________________
+        // sem_buf2.sem_op = 1; /* Releasing the resource */
+        // int retval2 = semop(semid2, &sem_buf2, 1);
+        if (retval2 == -1)
+        {
+            perror("Semaphore Locked\n");
+            exit(0);
+        }
         int commoditynumber = isExisting(commodities,11,cptr);
         commodities = updateCommoditiy(commodities,commoditynumber,cptr);
         printbidding(commodities,11);
